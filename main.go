@@ -1,5 +1,10 @@
 package main
 
+/*
+これを参考にした習作
+https://github.com/akrennmair/telnet-chat/blob/master/chat.go
+*/
+
 import (
 	"bufio"
 	"fmt"
