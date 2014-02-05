@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 )
 
 type Client struct {
@@ -60,7 +61,11 @@ func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-c
 }
 
 func main() {
-	ln, err := net.Listen("tcp", ":8080")
+	port := ":8080"
+	if len(os.Args) > 1 {
+		port = ":" + os.Args[1]
+	}
+	ln, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatal(err)
 	}
