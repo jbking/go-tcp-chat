@@ -17,6 +17,7 @@ func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, m
 	c := make(chan string)
 	client := Client{con, c}
 
+	io.WriteString(client.con, "> ")
 	go func() {
 		defer client.con.Close()
 		for s := range c {
@@ -24,6 +25,7 @@ func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, m
 				deleteclient <- client
 				return
 			}
+			io.WriteString(client.con, "> ")
 		}
 	}()
 
