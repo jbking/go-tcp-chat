@@ -22,11 +22,7 @@ func (client *TestClient) Join(Room) {
 }
 
 func TestRoomType(t *testing.T) {
-	room := &SimpleRoom{
-		nil,
-		nil,
-		nil,
-	}
+	room := new(SimpleRoom)
 	// Type check
 	_ = Room(room)
 }
