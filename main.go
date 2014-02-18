@@ -16,18 +16,20 @@ import (
 
 type Client struct {
 	con net.Conn
-	c   chan<- string
+	c   chan<- Message
 }
 
-func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, msgchan chan string) {
-	c := make(chan string)
+type Message string
+
+func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, msgchan chan Message) {
+	c := make(chan Message)
 	client := Client{con, c}
 
 	io.WriteString(client.con, "> ")
 	go func() {
 		defer client.con.Close()
 		for s := range c {
-			if _, err := io.WriteString(client.con, s); err != nil {
+			if _, err := io.WriteString(client.con, string(s)); err != nil {
 				deleteclient <- client
 				return
 			}
@@ -43,11 +45,11 @@ func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, m
 		if err != nil {
 			break
 		}
-		msgchan <- string(l) + "\r\n"
+		msgchan <- Message(string(l) + "\r\n")
 	}
 }
 
-func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-chan string) {
+func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-chan Message) {
 	clients := make(map[Client]bool)
 	for {
 		select {
@@ -77,7 +79,7 @@ func main() {
 
 	addclient := make(chan Client)
 	deleteclient := make(chan Client)
-	msgchan := make(chan string)
+	msgchan := make(chan Message)
 
 	go distribute(addclient, deleteclient, msgchan)
 
