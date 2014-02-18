@@ -14,32 +14,45 @@ import (
 	"os"
 )
 
-type Client struct {
+type NetClient struct {
 	con net.Conn
 	c   chan<- Message
+}
+
+type Client interface {
+	Id() string
+	Channel() chan<- Message
 }
 
 type Message string
 
 const MAX_MSG_BUF int = 64
 
+func (nc *NetClient) Channel() chan<- Message {
+	return nc.c
+}
+
+func (nc *NetClient) Id() string {
+	return fmt.Sprint(nc.con.RemoteAddr())
+}
+
 func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, msgchan chan Message) {
 	c := make(chan Message, MAX_MSG_BUF)
-	client := Client{con, c}
+	client := NetClient{con, c}
 
 	io.WriteString(client.con, "> ")
 	go func() {
 		defer client.con.Close()
 		for s := range c {
 			if _, err := io.WriteString(client.con, string(s)); err != nil {
-				deleteclient <- client
+				deleteclient <- &client
 				return
 			}
 			io.WriteString(client.con, "> ")
 		}
 	}()
 
-	addclient <- client
+	addclient <- &client
 
 	buf := bufio.NewReader(client.con)
 	for {
@@ -56,15 +69,15 @@ func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-c
 	for {
 		select {
 		case client := <-addclient:
-			fmt.Printf("new client: %v\n", client.con.RemoteAddr())
+			fmt.Printf("new client: %v\n", client.Id())
 			clients[client] = true
 		case client := <-deleteclient:
-			fmt.Printf("delete client: %v\n", client.con.RemoteAddr())
+			fmt.Printf("delete client: %v\n", client.Id())
 			delete(clients, client)
 		case msg := <-msgchan:
 			for client, _ := range clients {
 				select {
-				case client.c <- msg:
+				case client.Channel() <- msg:
 				default:
 				}
 			}
