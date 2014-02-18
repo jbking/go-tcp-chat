@@ -21,8 +21,10 @@ type Client struct {
 
 type Message string
 
+const MAX_MSG_BUF int = 64
+
 func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, msgchan chan Message) {
-	c := make(chan Message)
+	c := make(chan Message, MAX_MSG_BUF)
 	client := Client{con, c}
 
 	io.WriteString(client.con, "> ")
@@ -61,7 +63,10 @@ func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-c
 			delete(clients, client)
 		case msg := <-msgchan:
 			for client, _ := range clients {
-				go func(client Client) { client.c <- msg }(client)
+				select {
+				case client.c <- msg:
+				default:
+				}
 			}
 		}
 	}
