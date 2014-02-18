@@ -24,6 +24,18 @@ type Client interface {
 	Channel() chan<- Message
 }
 
+type Room interface {
+	AddClient(Client)
+	DeleteClient(Client)
+	Message(Message)
+}
+
+type SimpleRoom struct {
+	addclient    chan Client
+	deleteclient chan Client
+	msgchan      chan Message
+}
+
 type Message string
 
 const MAX_MSG_BUF int = 64
@@ -36,7 +48,19 @@ func (nc *NetClient) Id() string {
 	return fmt.Sprint(nc.con.RemoteAddr())
 }
 
-func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, msgchan chan Message) {
+func (room *SimpleRoom) AddClient(client Client) {
+	room.addclient <- client
+}
+
+func (room *SimpleRoom) DeleteClient(client Client) {
+	room.deleteclient <- client
+}
+
+func (room *SimpleRoom) Message(msg Message) {
+	room.msgchan <- msg
+}
+
+func handle(con net.Conn, room Room) {
 	c := make(chan Message, MAX_MSG_BUF)
 	client := NetClient{con, c}
 
@@ -45,14 +69,14 @@ func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, m
 		defer client.con.Close()
 		for s := range c {
 			if _, err := io.WriteString(client.con, string(s)); err != nil {
-				deleteclient <- &client
+				room.DeleteClient(&client)
 				return
 			}
 			io.WriteString(client.con, "> ")
 		}
 	}()
 
-	addclient <- &client
+	room.AddClient(&client)
 
 	buf := bufio.NewReader(client.con)
 	for {
@@ -60,21 +84,21 @@ func handle(con net.Conn, addclient chan<- Client, deleteclient chan<- Client, m
 		if err != nil {
 			break
 		}
-		msgchan <- Message(string(l) + "\r\n")
+		room.Message(Message(string(l) + "\r\n"))
 	}
 }
 
-func distribute(addclient <-chan Client, deleteclient <-chan Client, msgchan <-chan Message) {
+func (room *SimpleRoom) distribute() {
 	clients := make(map[Client]bool)
 	for {
 		select {
-		case client := <-addclient:
+		case client := <-room.addclient:
 			fmt.Printf("new client: %v\n", client.Id())
 			clients[client] = true
-		case client := <-deleteclient:
+		case client := <-room.deleteclient:
 			fmt.Printf("delete client: %v\n", client.Id())
 			delete(clients, client)
-		case msg := <-msgchan:
+		case msg := <-room.msgchan:
 			for client, _ := range clients {
 				select {
 				case client.Channel() <- msg:
@@ -95,11 +119,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	addclient := make(chan Client)
-	deleteclient := make(chan Client)
-	msgchan := make(chan Message)
+	room := SimpleRoom{
+		make(chan Client),
+		make(chan Client),
+		make(chan Message),
+	}
 
-	go distribute(addclient, deleteclient, msgchan)
+	go room.distribute()
 
 	for {
 		conn, err := ln.Accept()
@@ -107,6 +133,6 @@ func main() {
 			continue
 		}
 
-		go handle(conn, addclient, deleteclient, msgchan)
+		go handle(conn, &room)
 	}
 }
