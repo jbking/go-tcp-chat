@@ -32,7 +32,7 @@ func TestDispatch(t *testing.T) {
 
 	client := &TestClient{
 		"test",
-		make(chan Message),
+		make(chan Message, 1),
 	}
 
 	go room.dispatch()
@@ -43,5 +43,33 @@ func TestDispatch(t *testing.T) {
 		if string(msg) != "ping" {
 			t.Errorf("Got wrong message: %v", msg)
 		}
+	default:
+		t.Errorf("Not received.")
+	}
+}
+
+func TestClose(t *testing.T) {
+	room := NewSimpleRoom()
+
+	client := &TestClient{
+		"test",
+		make(chan Message, 1),
+	}
+
+	go room.dispatch()
+	room.AddClient(client)
+	room.Close()
+	actual := room.closed
+	expected := true
+	if expected != actual {
+		t.Errorf("room isn't closed: %v %v", expected, actual)
+	}
+
+	room.AddClient(client)
+	room.Cast(Message("ping"))
+	select {
+	case <-client.c:
+		t.Errorf("Not closed.")
+	default:
 	}
 }

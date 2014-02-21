@@ -23,19 +23,23 @@ type Client interface {
 type SimpleClient struct {
 	con io.ReadWriteCloser
 	c   chan Message
-    id string
+	id  string
 }
 
 type Room interface {
 	AddClient(Client)
 	DeleteClient(Client)
 	Cast(Message)
+	Close()
 }
 
 type SimpleRoom struct {
 	addclient    chan Client
 	deleteclient chan Client
 	msgchan      chan Message
+	sentchan     chan bool
+	quitchan     chan bool
+	closed       bool
 }
 
 type Message string
@@ -51,15 +55,31 @@ func (client *SimpleClient) Id() string {
 }
 
 func (room *SimpleRoom) AddClient(client Client) {
+	if room.closed {
+		return
+	}
 	room.addclient <- client
 }
 
 func (room *SimpleRoom) DeleteClient(client Client) {
+	if room.closed {
+		return
+	}
 	room.deleteclient <- client
 }
 
 func (room *SimpleRoom) Cast(msg Message) {
+	if room.closed {
+		return
+	}
 	room.msgchan <- msg
+	<-room.sentchan
+}
+
+func (room *SimpleRoom) Close() {
+	room.quitchan <- true
+	<-room.quitchan
+	room.closed = true
 }
 
 func (client *SimpleClient) Join(room Room) {
@@ -104,6 +124,13 @@ func (room *SimpleRoom) dispatch() {
 				default:
 				}
 			}
+			room.sentchan <- true
+		case <-room.quitchan:
+			for client, _ := range clients {
+				delete(clients, client)
+			}
+			defer func() { close(room.quitchan) }()
+			return
 		}
 	}
 }
@@ -119,6 +146,9 @@ func NewSimpleRoom() *SimpleRoom {
 		make(chan Client),
 		make(chan Client),
 		make(chan Message),
+		make(chan bool),
+		make(chan bool),
+		false,
 	}
 }
 
