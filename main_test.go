@@ -21,27 +21,23 @@ func (client *TestClient) Join(Room) {
 	panic("Not implemented")
 }
 
-func TestRoomType(t *testing.T) {
-	room := new(SimpleRoom)
+func TestSimpleRoomType(t *testing.T) {
+	room := NewSimpleRoom()
 	// Type check
 	_ = Room(room)
 }
 
-func TestDistribute(t *testing.T) {
-	room := &SimpleRoom{
-		make(chan Client),
-		make(chan Client),
-		make(chan Message),
-	}
+func TestDispatch(t *testing.T) {
+	room := NewSimpleRoom()
 
 	client := &TestClient{
 		"test",
 		make(chan Message),
 	}
 
-	go room.distribute()
+	go room.dispatch()
 	room.AddClient(client)
-	room.Message(Message("ping"))
+	room.Cast(Message("ping"))
 	select {
 	case msg := <-client.c:
 		if string(msg) != "ping" {

@@ -14,21 +14,22 @@ import (
 	"os"
 )
 
-type NetClient struct {
-	con net.Conn
-	c   chan Message
-}
-
 type Client interface {
 	Id() string
 	Channel() chan<- Message
 	Join(Room)
 }
 
+type SimpleClient struct {
+	con io.ReadWriteCloser
+	c   chan Message
+    id string
+}
+
 type Room interface {
 	AddClient(Client)
 	DeleteClient(Client)
-	Message(Message)
+	Cast(Message)
 }
 
 type SimpleRoom struct {
@@ -41,12 +42,12 @@ type Message string
 
 const MAX_MSG_BUF int = 64
 
-func (nc *NetClient) Channel() chan<- Message {
-	return nc.c
+func (client *SimpleClient) Channel() chan<- Message {
+	return client.c
 }
 
-func (nc *NetClient) Id() string {
-	return fmt.Sprint(nc.con.RemoteAddr())
+func (client *SimpleClient) Id() string {
+	return client.id
 }
 
 func (room *SimpleRoom) AddClient(client Client) {
@@ -57,11 +58,11 @@ func (room *SimpleRoom) DeleteClient(client Client) {
 	room.deleteclient <- client
 }
 
-func (room *SimpleRoom) Message(msg Message) {
+func (room *SimpleRoom) Cast(msg Message) {
 	room.msgchan <- msg
 }
 
-func (client *NetClient) Join(room Room) {
+func (client *SimpleClient) Join(room Room) {
 	io.WriteString(client.con, "> ")
 	go func() {
 		defer client.con.Close()
@@ -82,11 +83,11 @@ func (client *NetClient) Join(room Room) {
 		if err != nil {
 			break
 		}
-		room.Message(Message(string(l) + "\r\n"))
+		room.Cast(Message(string(l) + "\r\n"))
 	}
 }
 
-func (room *SimpleRoom) distribute() {
+func (room *SimpleRoom) dispatch() {
 	clients := make(map[Client]bool)
 	for {
 		select {
@@ -107,10 +108,18 @@ func (room *SimpleRoom) distribute() {
 	}
 }
 
-func NewClient(conn net.Conn) NetClient {
+func NewSimpleClient(conn net.Conn) SimpleClient {
 	c := make(chan Message, MAX_MSG_BUF)
-	client := NetClient{conn, c}
+	client := SimpleClient{conn, c, fmt.Sprint(conn.RemoteAddr())}
 	return client
+}
+
+func NewSimpleRoom() *SimpleRoom {
+	return &SimpleRoom{
+		make(chan Client),
+		make(chan Client),
+		make(chan Message),
+	}
 }
 
 func main() {
@@ -123,13 +132,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	room := SimpleRoom{
-		make(chan Client),
-		make(chan Client),
-		make(chan Message),
-	}
+	room := NewSimpleRoom()
 
-	go room.distribute()
+	go room.dispatch()
 
 	for {
 		conn, err := ln.Accept()
@@ -137,7 +142,7 @@ func main() {
 			continue
 		}
 
-		client := NewClient(conn)
-		go client.Join(&room)
+		client := NewSimpleClient(conn)
+		go client.Join(room)
 	}
 }
